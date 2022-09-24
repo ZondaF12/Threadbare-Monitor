@@ -26,9 +26,9 @@ function delay(delayInms) {
 
 async function main() {
   while (true) {
-    await checkAvaliable(6623562334340, 39600579018884);
+    await checkAvaliable(6720326140036, 40013517029508);
     await delay(8000);
-    await checkAvaliable(6623562334340, 39600579051652);
+    await checkAvaliable(6720326140036, 40013517062276);
     await delay(8000);
     await checkAvaliable(5141773779076, 34519185686660);
     await delay(8000);
@@ -38,7 +38,7 @@ async function main() {
 }
 
 async function checkAvaliable(productID, sizeID) {
-  let res;
+  let res, index;
 
   let randomNumber = Math.floor(Math.random() * 100000);
 
@@ -48,26 +48,36 @@ async function checkAvaliable(productID, sizeID) {
     );
 
     const obj = JSON.parse(res.body);
-
     let product = await obj.products.find((el) => el.id === productID);
+
     let size = await product.variants.find((el) => el.id === sizeID);
+    let test = await previouslyInStock.find((el) => el.id === sizeID);
+    // console.log(test);
 
-    // console.log(size);
-    let index = previouslyInStock.findIndex((e) => e.id === sizeID);
+    if (test != "undefined") {
+      index = previouslyInStock.findIndex((el) => el.id === sizeID);
+    }
 
-    if (previouslyInStock.find((el) => el.id === sizeID)) {
-      if (previouslyInStock[index].available != size.available) {
+    // console.log(previouslyInStock);
+
+    if (previouslyInStock === [] || test === undefined) {
+      console.log("NEW");
+      previouslyInStock.push({ id: sizeID, available: false });
+      index = previouslyInStock.findIndex((e) => e.id === sizeID);
+      // console.log(index);
+    }
+
+    if (size.available) {
+      if (!previouslyInStock[index].available) {
+        console.log("INSTOCK");
+        await discordMessage();
         previouslyInStock[index].available = size.available;
       }
     } else {
-      previouslyInStock.push({ id: sizeID, available: size.available });
-      index = previouslyInStock.findIndex((e) => e.id === sizeID);
-    }
-
-    console.log(index);
-
-    if (size.available && !previouslyInStock[index].available) {
-      await discordMessage();
+      console.log("OOS");
+      if (previouslyInStock[index].available === false) {
+        previouslyInStock[index].available = size.available;
+      }
     }
   } catch (err) {
     console.log(err);
