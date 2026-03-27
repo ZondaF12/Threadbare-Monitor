@@ -1,20 +1,7 @@
 require("dotenv").config();
 const got = require("got");
-const { Client, Intents, MessageEmbed } = require("discord.js");
 
 let previouslyInStock = [];
-
-const client = new Client({
-    intents: [
-        Intents.FLAGS.GUILDS, //adds server functionality
-        Intents.FLAGS.GUILD_MESSAGES, //gets messages from our bot.
-    ],
-});
-
-client.once("ready", async () => {
-    console.log("Ready!");
-    await main();
-});
 
 function delay(delayInms) {
     return new Promise((resolve) => {
@@ -22,6 +9,36 @@ function delay(delayInms) {
             resolve(2);
         }, delayInms);
     });
+}
+
+async function sendPingNotification(product, size, wasAvailable) {
+    const url = process.env.PING_URL;
+    if (!url) {
+        console.error("PING_URL is not set");
+        return;
+    }
+
+    const message =
+        wasAvailable === false
+            ? `${product.title} (${size.title}) is back in stock.`
+            : `${product.title} (${size.title}) is in stock.`;
+
+    const body = {
+        message,
+        title: `In stock: ${product.title}`,
+        subtitle: size.title,
+        url: `https://www.33-mm.com/products/${product.handle}`,
+        image_url: product.images?.[0]?.src ?? "",
+    };
+
+    try {
+        await got.post(url, {
+            json: body,
+            responseType: "json",
+        });
+    } catch (err) {
+        console.error("Ping request failed:", err.message);
+    }
 }
 
 async function main() {
@@ -34,59 +51,47 @@ async function main() {
 }
 
 async function checkAvaliable(productID, sizeID) {
-    let res;
-
-    let randomNumber = Math.floor(Math.random() * 100000);
+    const randomNumber = Math.floor(Math.random() * 100000);
 
     try {
-        res = await got.get(
+        const res = await got.get(
             `https://www.33-mm.com/collections/knitwear/products.json?limit=${randomNumber}`,
         );
 
         const obj = JSON.parse(res.body);
+        const product = obj.products.find((el) => el.id === productID);
+        if (!product) return;
 
-        let product = await obj.products.find((el) => el.id === productID);
+        const size = product.variants.find((el) => el.id === sizeID);
+        if (!size) return;
 
-        let size = await product.variants.find((el) => el.id === sizeID);
+        const prev = previouslyInStock.find((el) => el.id === sizeID);
+        const wasAvailable = prev?.available;
 
         let index = previouslyInStock.findIndex((e) => e.id === sizeID);
 
-        if (previouslyInStock.find((el) => el.id === sizeID)) {
-            if (previouslyInStock[index].available != size.available) {
+        if (prev) {
+            if (prev.available !== size.available) {
                 previouslyInStock[index].available = size.available;
             } else {
                 console.log("still out of stock");
             }
         } else {
             console.log("adding to object");
-
             previouslyInStock.push({ id: sizeID, available: size.available });
             index = previouslyInStock.findIndex((e) => e.id === sizeID);
         }
 
-        if (size.available && !previouslyInStock[index].available) {
-            await discordMessage();
+        const shouldNotify =
+            size.available === true &&
+            (wasAvailable === false || wasAvailable === undefined);
+
+        if (shouldNotify) {
+            await sendPingNotification(product, size, wasAvailable);
         }
     } catch (err) {
         console.log(err);
     }
 }
 
-async function discordMessage() {
-    const channel = client.channels.cache.get("891751964545781810");
-
-    const embed = new MessageEmbed()
-        .setColor("#fd2973")
-        .setTitle("Product In Stock")
-        .setURL(`https://www.33-mm.com/products/royce-jumper-light-grey`)
-        .setTimestamp()
-        .setFooter({
-            text: "Made by Roo#7777",
-            iconURL:
-                "https://i.ibb.co/VDMp2Bx/0e58a19b5a24f0542691313ff5106e40-1.png",
-        });
-
-    channel.send({ content: "<@181094829500006400>", embeds: [embed] });
-}
-
-client.login(process.env.DISCORD_TOKEN);
+main().catch(console.error);
