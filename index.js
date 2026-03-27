@@ -43,9 +43,9 @@ async function sendPingNotification(product, size, wasAvailable) {
 
 async function main() {
     while (true) {
-        await checkAvaliable(8999808401620, 47293250928852);
+        await checkAvaliable(8226544943316, 44686354940116);
         await delay(8000);
-        await checkAvaliable(8999808401620, 47293250961620);
+        await checkAvaliable(8226544943316, 44907197006036);
         await delay(300000);
     }
 }
@@ -55,7 +55,7 @@ async function checkAvaliable(productID, sizeID) {
 
     try {
         const res = await got.get(
-            `https://www.33-mm.com/collections/knitwear/products.json?limit=${randomNumber}`,
+            `https://www.33-mm.com/collections/t-shirts-and-tank-tops/products.json?limit=${randomNumber}`,
         );
 
         const obj = JSON.parse(res.body);
