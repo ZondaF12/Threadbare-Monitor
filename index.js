@@ -1,17 +1,57 @@
 require("dotenv").config();
 const got = require("got");
 
-let previouslyInStock = [];
+const DEFAULT_PRODUCTS_JSON_URL =
+    "https://www.33-mm.com/collections/t-shirts-and-tank-tops/products.json";
 
-function delay(delayInms) {
+const WATCHES = [
+    {
+        productId: 8226544943316,
+        variantId: 44686354940116,
+        productsUrl: DEFAULT_PRODUCTS_JSON_URL,
+        delayAfterMs: 5000,
+    },
+    {
+        productId: 8226544943316,
+        variantId: 44907197006036,
+        productsUrl: DEFAULT_PRODUCTS_JSON_URL,
+        delayAfterMs: 5000,
+    },
+    {
+        productId: 8999808401620,
+        variantId: 47293250961620,
+        productsUrl: "https://www.33-mm.com/collections/knitwear/products.json",
+        delayAfterMs: 300000,
+    },
+];
+
+let previouslyInStock = [];
+let shouldExit = false;
+
+function requestShutdown() {
+    shouldExit = true;
+}
+
+process.once("SIGINT", requestShutdown);
+process.once("SIGTERM", requestShutdown);
+
+function delayChunk(ms) {
     return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve(2);
-        }, delayInms);
+        setTimeout(resolve, ms);
     });
 }
 
-async function sendPingNotification(product, size, wasAvailable) {
+async function delay(delayMs) {
+    const chunkMs = 1000;
+    let remaining = delayMs;
+    while (remaining > 0 && !shouldExit) {
+        const step = Math.min(chunkMs, remaining);
+        await delayChunk(step);
+        remaining -= step;
+    }
+}
+
+async function sendPingNotification(product, size, wasAvailable, storeOrigin) {
     const url = process.env.PING_URL;
     if (!url) {
         console.error("PING_URL is not set");
@@ -27,7 +67,7 @@ async function sendPingNotification(product, size, wasAvailable) {
         message,
         title: `In stock: ${product.title}`,
         subtitle: size.title,
-        url: `https://www.33-mm.com/products/${product.handle}`,
+        url: `${storeOrigin}/products/${product.handle}`,
         image_url: product.images?.[0]?.src ?? "",
     };
 
@@ -42,23 +82,36 @@ async function sendPingNotification(product, size, wasAvailable) {
 }
 
 async function main() {
-    while (true) {
-        await checkAvaliable(8226544943316, 44686354940116);
-        await delay(8000);
-        await checkAvaliable(8226544943316, 44907197006036);
-        await delay(300000);
+    while (!shouldExit) {
+        for (const watch of WATCHES) {
+            if (shouldExit) break;
+            await checkAvailable(
+                watch.productId,
+                watch.variantId,
+                watch.productsUrl,
+            );
+            if (shouldExit) break;
+            await delay(watch.delayAfterMs);
+        }
     }
 }
 
-async function checkAvaliable(productID, sizeID) {
+async function checkAvailable(
+    productID,
+    sizeID,
+    productsUrl = DEFAULT_PRODUCTS_JSON_URL,
+) {
+    const storeOrigin = new URL(productsUrl).origin;
     const randomNumber = Math.floor(Math.random() * 100000);
+    const fetchUrl = new URL(productsUrl);
+    fetchUrl.searchParams.set("limit", String(randomNumber));
 
     try {
-        const res = await got.get(
-            `https://www.33-mm.com/collections/t-shirts-and-tank-tops/products.json?limit=${randomNumber}`,
-        );
+        const res = await got.get(fetchUrl.toString(), {
+            responseType: "json",
+        });
 
-        const obj = JSON.parse(res.body);
+        const obj = res.body;
         const product = obj.products.find((el) => el.id === productID);
         if (!product) return;
 
@@ -87,10 +140,15 @@ async function checkAvaliable(productID, sizeID) {
             (wasAvailable === false || wasAvailable === undefined);
 
         if (shouldNotify) {
-            await sendPingNotification(product, size, wasAvailable);
+            await sendPingNotification(
+                product,
+                size,
+                wasAvailable,
+                storeOrigin,
+            );
         }
     } catch (err) {
-        console.log(err);
+        console.error("Check failed:", err.message);
     }
 }
 
